@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../config/firebase';
 import { useNavigate } from 'react-router-dom';
+import newIcon from '../assets/new_icon.png';
 
 interface NavBarProps {
   notificationCount?: number;
@@ -44,7 +45,7 @@ const NavBar: React.FC<NavBarProps> = ({ notificationCount }) => {
           {/* Left: Logo and Title */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 700, fontSize: '1.3rem', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-              <span style={{ marginRight: 8, fontSize: '1.5rem' }}>🗺️</span> IncidentManager
+              <img src={newIcon} alt="App Icon" style={{ width: 32, height: 32, marginRight: 8, borderRadius: 8 }} /> IncidentManager
             </span>
           </div>
 

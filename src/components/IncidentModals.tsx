@@ -102,72 +102,116 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
 
 // Flag Report Modal
 interface FlagReportModalProps {
+  isOpen: boolean;
   onClose: () => void;
-  onFlag: (reason: string, notes: string) => void;
-  isFlagging: boolean;
+  onConfirm: (reason: string, notes: string) => void;
 }
 
-export const FlagReportModal: React.FC<FlagReportModalProps> = ({
-  onClose,
-  onFlag,
-  isFlagging
-}) => {
-  const [reason, setReason] = useState('');
-  const [notes, setNotes] = useState('');
-
+export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClose, onConfirm }) => {
+  const [flagReason, setFlagReason] = useState('duplicate');
+  const [flagNotes, setFlagNotes] = useState('');
+  
+  if (!isOpen) return null;
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onFlag(reason, notes);
+    onConfirm(flagReason, flagNotes);
   };
-
+  
   return (
-    <div className="modal-overlay">
-      <div className="modal-content">
-        <h2>Flag Report</h2>
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.5)',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        background: 'white',
+        borderRadius: 8,
+        padding: 24,
+        width: '90%',
+        maxWidth: 500
+      }}>
+        <h3 style={{ marginTop: 0 }}>Flag Suspicious Report</h3>
+        
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label htmlFor="reason">Reason for Flagging:</label>
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+              Reason for Flagging:
+            </label>
             <select
-              id="reason"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              required
+              value={flagReason}
+              onChange={(e) => setFlagReason(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #ccc',
+                borderRadius: 4,
+                fontSize: 16
+              }}
             >
-              <option value="">Select a reason</option>
-              <option value="false_report">False Report</option>
               <option value="duplicate">Duplicate Report</option>
+              <option value="false_info">False Information</option>
               <option value="inappropriate">Inappropriate Content</option>
               <option value="spam">Spam</option>
               <option value="other">Other</option>
             </select>
           </div>
-
-          <div className="form-group">
-            <label htmlFor="notes">Additional Notes:</label>
+          
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
+              Additional Notes:
+            </label>
             <textarea
-              id="notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={4}
-              placeholder="Please provide any additional details..."
+              value={flagNotes}
+              onChange={(e) => setFlagNotes(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #ccc',
+                borderRadius: 4,
+                fontSize: 16,
+                minHeight: 100,
+                resize: 'vertical'
+              }}
+              placeholder="Please provide details about why this report is being flagged..."
             />
           </div>
-
-          <div className="modal-actions">
+          
+          <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button
               type="button"
               onClick={onClose}
-              className="cancel-button"
-              disabled={isFlagging}
+              style={{
+                padding: '8px 16px',
+                border: '1px solid #ccc',
+                borderRadius: 4,
+                background: 'white',
+                color: 'black',
+                cursor: 'pointer'
+              }}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="submit-button"
-              disabled={isFlagging || !reason}
+              style={{
+                padding: '8px 16px',
+                border: 'none',
+                borderRadius: 4,
+                background: '#ff9800',
+                color: 'white',
+                fontWeight: 600,
+                cursor: 'pointer'
+              }}
             >
-              {isFlagging ? 'Flagging...' : 'Flag Report'}
+              Flag Report
             </button>
           </div>
         </form>

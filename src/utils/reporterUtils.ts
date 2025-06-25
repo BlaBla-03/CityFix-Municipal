@@ -183,16 +183,19 @@ export const updateReporterTrustOnVerification = async (reporterEmail: string): 
       falseReports,
       reporterData.createdAt || new Date()
     );
-    
+
+    // Add 10 trust level points for every completed incident
+    const trustLevelWithBonus = (newTrustLevel || 0) + 10;
+
     // Update reporter document
     await updateDoc(reporterDoc.ref, {
       verifiedReports,
       reportCount,
-      trustLevel: newTrustLevel,
+      trustLevel: trustLevelWithBonus,
       updatedAt: new Date()
     });
     
-    console.log('Successfully updated reporter trust level to:', newTrustLevel);
+    console.log('Successfully updated reporter trust level to:', trustLevelWithBonus);
     return true;
   } catch (error) {
     console.error('Error updating reporter trust on verification:', error);

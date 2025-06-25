@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "city-fix-62029"
+  },
+  "targets": {
+    "city-fix-62029": {
+      "hosting": {
+        "default": ["city-fix-62029"],
+        "municipal": ["cityfix-municipal"]
+      }
+    }
+  }
+}

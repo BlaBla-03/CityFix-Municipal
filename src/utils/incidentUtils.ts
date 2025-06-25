@@ -102,13 +102,12 @@ export const isOverdue = (deadline: any, status: string): boolean => {
 
 /**
  * Calculate time remaining until deadline or time since deadline (if overdue)
- * @param reportTimestamp When the incident was reported
  * @param deadline Deadline date for resolution
  * @param status Current status of the incident
  * @param showOverdueTime Whether to show detailed overdue time (for detail view) or just "Overdue"
  * @returns Formatted string representing time remaining or overdue status
  */
-export const getTimeRemaining = (reportTimestamp: any, deadline: any, status?: string, showOverdueTime: boolean = false) => {
+export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime: boolean = false) => {
   // For merged reports, return a dash
   if (status === 'Merged') {
     return '-';
@@ -264,7 +263,6 @@ export const determineSeverityFromType = async (incidentType: string): Promise<'
 // Incident Data interface
 export interface IncidentDetailData {
   id: string;
-  title: string;
   location: string;
   locationInfo: string;
   latitude?: number;
@@ -290,5 +288,4 @@ export interface IncidentDetailData {
   flagStatus?: string;
   mergedInto?: string;
   mergedAt?: any;
-  timestamp?: any;
 } 

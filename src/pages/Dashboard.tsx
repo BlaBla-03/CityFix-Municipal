@@ -33,7 +33,7 @@ const statsBoxStyle = {
   fontSize: '1.2rem',
 } as React.CSSProperties;
 
-const GOOGLE_MAPS_API_KEY = '***REMOVED***';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 const Dashboard: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);

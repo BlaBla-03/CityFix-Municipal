@@ -1,0 +1,28 @@
+{
+  "hosting": [
+    {
+      "target": "default",
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+        { "source": "**", "destination": "/index.html" }
+    ]
+    },
+    {
+      "target": "municipal",
+      "public": "dist",
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "rewrites": [
+        { "source": "**", "destination": "/index.html" }
+      ]
+    }
+  ]
+}
