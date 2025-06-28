@@ -3,7 +3,7 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCZLT8ZPsZgoWXrhRunCEqAb4m7w7DO8vo",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "city-fix-62029.firebaseapp.com",
   databaseURL: "https://city-fix-62029-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "city-fix-62029",
