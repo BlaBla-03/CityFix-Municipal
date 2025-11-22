@@ -3,10 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import Footer from '../components/Footer';
-import { 
-  formatDate, 
-  getTimeRemaining, 
-  statusColors, 
+import {
+  formatDate,
+  getTimeRemaining,
+  statusColors,
   IncidentDetailData,
   getFlagReasonText,
   calculateDeadline,
@@ -15,10 +15,12 @@ import {
   getSeverityColor
 } from '../utils/incidentUtils';
 import { FlagReportModal } from '../components/IncidentModals';
+import { SeverityChangeModal } from '../components/SeverityChangeModal';
+import SmartMergeAlert from '../components/SmartMergeAlert';
 import RelatedReports from '../components/RelatedReports';
 import ReporterBadge from '../components/ReporterBadge';
-import { 
-  calculateIncidentPriority, 
+import {
+  calculateIncidentPriority,
   updateReporterTrustOnVerification,
   updateReporterTrustOnFalseReport
 } from '../utils/reporterUtils';
@@ -29,64 +31,6 @@ interface ExtendedIncidentDetailData extends IncidentDetailData {
   isOverdue: boolean;
   timestamp?: any;
 }
-
-// Add a confirmation dialog before changing severity
-const confirmSeverityChange = async (
-  currentSeverity: string, 
-  newSeverity: 'Low' | 'Medium' | 'High' | 'Critical',
-  incident: ExtendedIncidentDetailData,
-  id: string,
-  callback: () => void
-) => {
-  try {
-    // Get the actual current time remaining
-    const currentTimeRemaining = getTimeRemaining(incident.deadline, incident.status, true);
-    
-    // Calculate what the new time remaining would be
-    const docRef = doc(db, 'reports', id);
-    const docSnap = await getDoc(docRef);
-    if (!docSnap.exists()) {
-      throw new Error("Document doesn't exist");
-    }
-    
-    const data = docSnap.data();
-    
-    // Calculate new deadline based on severity
-    const newDeadline = calculateDeadline(data.timestamp, newSeverity);
-    
-    if (!newDeadline) {
-      throw new Error("Could not calculate new deadline");
-    }
-    
-    // Get the time remaining that would be set
-    const newTimeRemaining = getTimeRemaining(newDeadline, incident.status, true);
-    
-    // Get timeframe descriptions for clarity
-    const SEVERITY_DESCRIPTIONS = {
-      'Low': 'Low priority (7 days)',
-      'Medium': 'Medium priority (5 days)',
-      'High': 'High priority (3 days)',
-      'Critical': 'Critical priority (1 day)'
-    };
-    
-    const message = `You are changing the severity from ${SEVERITY_DESCRIPTIONS[currentSeverity as keyof typeof SEVERITY_DESCRIPTIONS]} to ${SEVERITY_DESCRIPTIONS[newSeverity as keyof typeof SEVERITY_DESCRIPTIONS]}.
-
-Current time remaining: ${currentTimeRemaining}
-New time remaining will be: ${newTimeRemaining}
-
-Do you want to continue?`;
-
-    if (window.confirm(message)) {
-      callback();
-    }
-  } catch (error) {
-    console.error("Error preparing severity change confirmation:", error);
-    // Fall back to simple confirmation if there's an error
-    if (window.confirm(`Change severity from ${currentSeverity} to ${newSeverity}?`)) {
-      callback();
-    }
-  }
-};
 
 // Add this helper function near the top of the component
 const normalizeSeverity = (severity: string) => {
@@ -113,6 +57,8 @@ const IncidentDetail: React.FC = () => {
   const [isMainReport, setIsMainReport] = useState(false);
   const [reporterId, setReporterId] = useState<string | null>(null);
   const [reporterTrustLevel, setReporterTrustLevel] = useState<number | null>(null);
+  const [showSeverityModal, setShowSeverityModal] = useState(false);
+  const [pendingSeverity, setPendingSeverity] = useState<'Low' | 'Medium' | 'High' | 'Critical' | null>(null);
 
   useEffect(() => {
     const fetchIncident = async () => {
@@ -121,10 +67,10 @@ const IncidentDetail: React.FC = () => {
       try {
         const docRef = doc(db, 'reports', id);
         const docSnap = await getDoc(docRef);
-        
+
         if (docSnap.exists()) {
           const d = docSnap.data();
-          
+
           // Log the incident data for debugging
           console.log('Initial incident data:', {
             id: docSnap.id,
@@ -139,7 +85,7 @@ const IncidentDetail: React.FC = () => {
           // Or if we're forcing severity based on type (uncomment the next line to enforce type-based severity)
           // const shouldUpdateSeverity = true;
           const shouldUpdateSeverity = !d.severity || d.severity === 'Low'; // Only update if not set or default Low
-          
+
           let severity = d.severity || 'Low';
           if (shouldUpdateSeverity && d.incidentType) {
             try {
@@ -155,16 +101,16 @@ const IncidentDetail: React.FC = () => {
             }
           }
           console.log('Final severity to set in state:', severity);
-          
+
           // Always recalculate deadline using current timeframe values and potentially updated severity
           const deadline = calculateDeadline(d.timestamp, severity);
           let needsUpdate = false;
-          
+
           // Determine if deadline or severity needs update
           if (severity !== d.severity) {
             needsUpdate = true;
           }
-          
+
           // Determine if deadline needs update
           if (deadline && d.deadline) {
             let existingDeadlineDate: Date | null = null;
@@ -173,9 +119,9 @@ const IncidentDetail: React.FC = () => {
             } else if (d.deadline.seconds) {
               existingDeadlineDate = new Date(d.deadline.seconds * 1000);
             }
-            
-            if (existingDeadlineDate && 
-                Math.abs(existingDeadlineDate.getTime() - deadline.getTime()) > 60 * 60 * 1000) {
+
+            if (existingDeadlineDate &&
+              Math.abs(existingDeadlineDate.getTime() - deadline.getTime()) > 60 * 60 * 1000) {
               needsUpdate = true;
               console.log('Deadline needs update:', {
                 old: existingDeadlineDate.toISOString(),
@@ -185,25 +131,25 @@ const IncidentDetail: React.FC = () => {
           } else if (deadline) {
             needsUpdate = true;
           }
-          
+
           // Check if incident should be marked as overdue
           let status = d.reportState || 'New';
-          
+
           // Calculate the actual overdue state
           const shouldBeOverdue = isOverdue(deadline, status);
-          
+
           // Apply overdue status logic with new rules:
           // 1. Never mark completed/merged incidents as overdue
           // 2. Respect any manual override of isOverdue from the database
           let isOverdueFlag = false;
           if (status !== 'Completed' && status !== 'Merged') {
             isOverdueFlag = shouldBeOverdue;
-            
+
             // If overdue state changed, update the database
             if (d.isOverdue !== shouldBeOverdue) {
               needsUpdate = true;
             }
-            
+
             // If overdue, also update the status
             if (shouldBeOverdue && status !== 'Overdue') {
               status = 'Overdue';
@@ -213,33 +159,33 @@ const IncidentDetail: React.FC = () => {
               needsUpdate = true;
             }
           }
-          
+
           // Update document if needed
           if (needsUpdate) {
             const updates: any = {
               isOverdue: isOverdueFlag,
               reportState: status
             };
-            
+
             // Update severity only if it changed
             if (severity !== d.severity) {
               updates.severity = severity;
             }
-            
+
             // Update deadline only if it changed
             if (deadline) {
               updates.deadline = Timestamp.fromDate(deadline);
             }
-            
+
             await updateDoc(docRef, updates);
             console.log('Updated incident with:', updates);
           }
-          
+
           // Fetch reporter data if available
           if (d.reporterEmail) {
             // ... existing code for fetching reporter ...
           }
-          
+
           // Always update local state with the correct severity
           const incidentData: ExtendedIncidentDetailData = {
             id: docSnap.id,
@@ -321,72 +267,50 @@ const IncidentDetail: React.FC = () => {
     fetchReporterId();
   }, [incident?.reporterEmail, incident?.isAnonymous]);
 
-  // Modify the severity change handler to use the confirmation dialog
-  const handleSeverityChange = async (newSeverity: 'Low' | 'Medium' | 'High' | 'Critical') => {
-    if (!id || !incident) return;
-    
-    // Only show the prompt if severity is actually changing
+  const applySeverityChange = async (newSeverity: 'Low' | 'Medium' | 'High' | 'Critical') => {
+    if (!incident || !id) return;
+    try {
+      const docRef = doc(db, 'reports', id);
+      const newDeadline = calculateDeadline(incident.timestamp, newSeverity);
+      if (!newDeadline) throw new Error('Could not calculate new deadline');
+
+      await updateDoc(docRef, {
+        severity: newSeverity,
+        deadline: Timestamp.fromDate(newDeadline)
+      });
+
+      setIncident(prev => prev ? { ...prev, severity: newSeverity, deadline: newDeadline } : null);
+    } catch (e) {
+      console.error('Failed to update severity:', e);
+    }
+  };
+
+  const handleSeverityChange = (newSeverity: 'Low' | 'Medium' | 'High' | 'Critical') => {
+    if (!incident) return;
     if (newSeverity === incident.severity) return;
-    
-    confirmSeverityChange(
-      incident.severity, 
-      newSeverity, 
-      incident, 
-      id,
-      async () => {
-        try {
-          const docRef = doc(db, 'reports', id);
-          
-          // Calculate new deadline based on severity
-          const newDeadline = calculateDeadline(incident.timestamp, newSeverity);
-          
-          if (!newDeadline) {
-            throw new Error("Could not calculate new deadline");
-          }
-          
-          // Update Firestore
-          await updateDoc(docRef, {
-            severity: newSeverity,
-            deadline: Timestamp.fromDate(newDeadline)
-          });
-          
-          // Update local state
-          setIncident(prev => {
-            if (!prev) return null;
-            return { 
-              ...prev, 
-              severity: newSeverity,
-              deadline: newDeadline
-            };
-          });
-          
-          console.log(`Severity changed to ${newSeverity}, new deadline set to: ${newDeadline.toISOString()}`);
-        } catch (error) {
-          console.error('Failed to update severity:', error);
-        }
-      }
-    );
+    setPendingSeverity(newSeverity);
+    setShowSeverityModal(true);
   };
 
   const handleMarkAsCompleted = async () => {
     if (!id || !incident) return;
     try {
       const docRef = doc(db, 'reports', id);
-      
+
       // Fetch the latest data to ensure we have accurate timestamps
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) {
         throw new Error('Incident not found');
       }
-      
+
       const incidentData = docSnap.data();
       const startTime = incidentData.timestamp;
       const endTime = new Date();
-      
+
       // Calculate resolution time in hours
       let resolutionTimeHours = 0;
       let resolutionTimeFormatted = '';
-      
+
       if (startTime) {
         let startDate: Date;
         if (startTime instanceof Timestamp) {
@@ -396,17 +320,17 @@ const IncidentDetail: React.FC = () => {
         } else {
           startDate = new Date(startTime);
         }
-        
+
         // Calculate difference in milliseconds
         const diffMs = endTime.getTime() - startDate.getTime();
         // Convert to hours (including fractional part)
         resolutionTimeHours = diffMs / (1000 * 60 * 60);
-        
+
         // Format for display - consistent with time remaining format (days first)
         const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
         const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
         const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-        
+
         // Create a properly formatted time string with days first
         if (days > 0) {
           if (hours > 0 && minutes > 0) {
@@ -427,7 +351,7 @@ const IncidentDetail: React.FC = () => {
         } else {
           resolutionTimeFormatted = 'Less than 1 minute';
         }
-        
+
         console.log('Resolution time:', {
           startDate,
           endTime,
@@ -436,7 +360,7 @@ const IncidentDetail: React.FC = () => {
           resolutionTimeFormatted
         });
       }
-      
+
       // Update with resolution information and ensure not marked as overdue
       await updateDoc(docRef, {
         reportState: 'Completed',
@@ -445,15 +369,15 @@ const IncidentDetail: React.FC = () => {
         resolutionTimeHours,
         resolutionTimeFormatted
       });
-      
-      setIncident(prev => prev ? { 
-        ...prev, 
+
+      setIncident(prev => prev ? {
+        ...prev,
         status: 'Completed',
         isOverdue: false, // Update local state too
         resolutionTimeHours,
         resolutionTimeFormatted
       } : null);
-      
+
       // Update reporter trust level since the report is now verified
       if (!incidentData.isAnonymous && incidentData.reporterEmail) {
         try {
@@ -463,7 +387,7 @@ const IncidentDetail: React.FC = () => {
           console.error('Error updating reporter trust level:', error);
         }
       }
-      
+
       alert(`Incident has been marked as resolved successfully! Resolution time: ${resolutionTimeFormatted}`);
     } catch (error) {
       console.error('Failed to mark incident as completed:', error);
@@ -473,19 +397,19 @@ const IncidentDetail: React.FC = () => {
 
   const handleFlagReport = async (reason: string, notes: string) => {
     if (!id || !incident) return;
-    
+
     setFlagging(true);
     try {
       const docRef = doc(db, 'reports', id);
-      
+
       // Get the current data to access reporter information
       const docSnap = await getDoc(docRef);
       if (!docSnap.exists()) {
         throw new Error('Incident not found');
       }
-      
+
       const incidentData = docSnap.data();
-      
+
       // Update the report with flagged status
       await updateDoc(docRef, {
         flagged: true,
@@ -494,14 +418,14 @@ const IncidentDetail: React.FC = () => {
         flagNotes: notes,
         flagStatus: 'pending_review'  // Could be 'pending_review', 'confirmed_false', 'legitimate'
       });
-      
+
       // Update local state
       setIncident(prev => prev ? {
         ...prev,
         flagged: true,
         flagReason: reason
       } : null);
-      
+
       // Update reporter trust level if this is confirmed as a false report
       if (reason === 'false_report' && !incidentData.isAnonymous && incidentData.reporterEmail) {
         try {
@@ -511,7 +435,7 @@ const IncidentDetail: React.FC = () => {
           console.error('Error updating reporter trust level:', error);
         }
       }
-      
+
       setShowFlagModal(false);
       alert("Report has been flagged for review by administrators.");
     } catch (error) {
@@ -524,18 +448,18 @@ const IncidentDetail: React.FC = () => {
   // Add a helper function to determine the time remaining color
   const getTimeRemainingColor = () => {
     if (!incident) return '#2ec4b6'; // default color
-    
+
     // Use type assertion to help TypeScript understand the comparison
     const status = incident.status as string;
-    
+
     if (status === 'Completed') {
       return '#43a047'; // green for completed
     }
-    
+
     if (status === 'Overdue') {
       return '#e53935'; // red for overdue
     }
-    
+
     return '#2ec4b6'; // default teal color
   };
 
@@ -551,8 +475,6 @@ const IncidentDetail: React.FC = () => {
   if (error) return <div style={{ textAlign: 'center', marginTop: 40, color: 'red' }}>{error}</div>;
   if (!incident) return null;
 
-  // Update the render method where the reporter info is displayed
-  // Replace the reporter info line with this:
   const renderReporterInfo = () => (
     <div style={{ marginBottom: 10, fontSize: 17, display: 'flex', alignItems: 'center' }}>
       <b>Reporter:</b>
@@ -570,7 +492,7 @@ const IncidentDetail: React.FC = () => {
   // Add priority indicator to the incident header
   const renderPriorityIndicator = () => {
     if (incidentPriority === null) return null;
-    
+
     const getPriorityColor = () => {
       if (incidentPriority >= 90) return '#d32f2f'; // Very high (red)
       if (incidentPriority >= 70) return '#f44336'; // High (light red)
@@ -578,17 +500,17 @@ const IncidentDetail: React.FC = () => {
       if (incidentPriority >= 30) return '#ffc107'; // Low-medium (amber)
       return '#8bc34a'; // Low (light green)
     };
-    
+
     return (
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        marginLeft: 16 
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        marginLeft: 16
       }}>
-        <div style={{ 
-          width: 10, 
-          height: 10, 
-          borderRadius: '50%', 
+        <div style={{
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
           background: getPriorityColor(),
           marginRight: 6
         }}></div>
@@ -622,7 +544,7 @@ const IncidentDetail: React.FC = () => {
           <div style={{ position: 'absolute', right: 32, top: 32, display: 'flex', alignItems: 'center', gap: 12 }}>
             <span style={{ fontWeight: 600, fontSize: 18 }}>Status</span>
             <span style={{ background: statusColors[incident.status], color: '#fff', borderRadius: 20, padding: '0.4rem 1.5rem', fontWeight: 600, fontSize: 18 }}>{incident.status}</span>
-            
+
             {/* Flag Report Button */}
             <button
               onClick={() => setShowFlagModal(true)}
@@ -645,15 +567,15 @@ const IncidentDetail: React.FC = () => {
               {incident.flagged ? '⚠️ Flagged' : '⚠️ Flag Report'}
             </button>
           </div>
-          
+
           {/* Show flag status if flagged */}
           {incident.flagged && (
-            <div style={{ 
-              background: '#fff3e0', 
-              padding: '10px 15px', 
-              borderRadius: 6, 
+            <div style={{
+              background: '#fff3e0',
+              padding: '10px 15px',
+              borderRadius: 6,
               marginBottom: 16,
-              border: '1px solid #ffe0b2' 
+              border: '1px solid #ffe0b2'
             }}>
               <div style={{ fontWeight: 600, color: '#e65100' }}>
                 ⚠️ This report has been flagged as potentially suspicious
@@ -663,11 +585,35 @@ const IncidentDetail: React.FC = () => {
               </div>
             </div>
           )}
-          
+
+          {/* Smart Merge Alert */}
+          {incident.status !== 'Merged' && incident.status !== 'Completed' && incident.latitude && incident.longitude && (
+            <SmartMergeAlert
+              currentIncidentId={incident.id}
+              currentLatitude={incident.latitude}
+              currentLongitude={incident.longitude}
+              incidentType={incident.incidentType}
+              currentDescription={incident.description}
+              onMergeComplete={() => {
+                // Refresh the incident data
+                const fetchIncident = async () => {
+                  const docRef = doc(db, 'reports', id!);
+                  const docSnap = await getDoc(docRef);
+                  if (docSnap.exists()) {
+                    const d = docSnap.data();
+                    setIncident(prev => prev ? { ...prev, ...d } : null);
+                    setMergedReports(d.mergedReports || []);
+                  }
+                };
+                fetchIncident();
+              }}
+            />
+          )}
+
           {/* Display merged info at the top if this is a merged report */}
           {incident.status === 'Merged' && incident.mergedInto && (
-            <div style={{ 
-              background: '#f0f8ff', 
+            <div style={{
+              background: '#f0f8ff',
               border: '1px solid #cce5ff',
               borderRadius: 8,
               padding: '12px 16px',
@@ -693,11 +639,11 @@ const IncidentDetail: React.FC = () => {
               </button>
             </div>
           )}
-          
+
           {/* Display reports that were merged into this one if this is a main report */}
           {isMainReport && mergedReports.length > 0 && (
-            <div style={{ 
-              background: '#f0f8ff', 
+            <div style={{
+              background: '#f0f8ff',
               border: '1px solid #cce5ff',
               borderRadius: 8,
               padding: '12px 16px',
@@ -709,12 +655,12 @@ const IncidentDetail: React.FC = () => {
               </h4>
               <div style={{ maxHeight: '150px', overflowY: 'auto', marginBottom: '12px' }}>
                 {mergedReports.map((report: any, index: number) => (
-                  <div key={index} style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
+                  <div key={index} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '8px 0',
-                    borderBottom: index < mergedReports.length - 1 ? '1px solid #e0e0e0' : 'none' 
+                    borderBottom: index < mergedReports.length - 1 ? '1px solid #e0e0e0' : 'none'
                   }}>
                     <div>
                       <span style={{ fontWeight: 600 }}>Report #{report.id}</span>
@@ -741,7 +687,7 @@ const IncidentDetail: React.FC = () => {
               </div>
             </div>
           )}
-          
+
           <div style={{ fontWeight: 700, fontSize: 22, marginBottom: 18, display: 'flex', alignItems: 'center' }}>
             Incident #{incident.id}
             {renderPriorityIndicator()}
@@ -805,28 +751,28 @@ const IncidentDetail: React.FC = () => {
           </div>
           <div style={{ marginBottom: 10, fontSize: 17 }}>
             <b>Severity:</b>
-            <select 
-              value={normalizeSeverity(incident.severity)} 
+            <select
+              value={normalizeSeverity(incident.severity)}
               onChange={(e) => handleSeverityChange(e.target.value as 'Low' | 'Medium' | 'High' | 'Critical')}
-              style={{ 
-                marginLeft: 8, 
-                padding: '0.3rem 1rem', 
-                borderRadius: 6, 
-                border: '1px solid #ddd', 
+              style={{
+                marginLeft: 8,
+                padding: '0.3rem 1rem',
+                borderRadius: 6,
+                border: '1px solid #ddd',
                 fontSize: 15,
                 color: getSeverityColor(incident.severity),
                 fontWeight: 600
               }}
             >
-              <option value="Low">Low</option>
-              <option value="Medium">Medium</option>
-              <option value="High">High</option>
-              <option value="Critical">Critical</option>
+              <option value="Low" style={{ color: getSeverityColor('Low') }}>Low (7 days)</option>
+              <option value="Medium" style={{ color: getSeverityColor('Medium') }}>Medium (5 days)</option>
+              <option value="High" style={{ color: getSeverityColor('High') }}>High (3 days)</option>
+              <option value="Critical" style={{ color: getSeverityColor('Critical') }}>Critical (1 day)</option>
             </select>
           </div>
           <div style={{ marginBottom: 18, fontSize: 17 }}>
-            <b>Time Remaining:</b> 
-            <span style={{ 
+            <b>Time Remaining:</b>
+            <span style={{
               color: getTimeRemainingColor(),
               fontWeight: 600,
               marginLeft: 8
@@ -834,72 +780,72 @@ const IncidentDetail: React.FC = () => {
               {getTimeRemaining(incident.deadline, incident.status, true)}
             </span>
           </div>
-          
+
           {/* Time Elapsed section */}
           <div style={{ marginBottom: 18, fontSize: 17 }}>
-            <b>Time Elapsed:</b> 
-            <span style={{ 
+            <b>Time Elapsed:</b>
+            <span style={{
               fontWeight: 600,
               marginLeft: 8,
               color: '#0277bd'
             }}>
-              {incident.status === 'Completed' && incident.completedAt 
+              {incident.status === 'Completed' && incident.completedAt
                 ? (() => {
-                    // Calculate time elapsed from report to completion
-                    const startDate = incident.timestamp instanceof Timestamp 
-                      ? incident.timestamp.toDate() 
-                      : new Date(incident.timestamp.seconds * 1000);
-                    
-                    const endDate = incident.completedAt instanceof Timestamp
-                      ? incident.completedAt.toDate()
-                      : new Date(incident.completedAt.seconds * 1000);
-                      
-                    const diffMs = endDate.getTime() - startDate.getTime();
-                    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                    
-                    if (days > 0) {
-                      return `${days}d ${hours}h ${minutes}m`;
-                    } else if (hours > 0) {
-                      return `${hours}h ${minutes}m`;
-                    } else if (minutes > 0) {
-                      return `${minutes}m`;
-                    } else {
-                      return 'Less than 1 minute';
-                    }
-                  })()
+                  // Calculate time elapsed from report to completion
+                  const startDate = incident.timestamp instanceof Timestamp
+                    ? incident.timestamp.toDate()
+                    : new Date(incident.timestamp.seconds * 1000);
+
+                  const endDate = incident.completedAt instanceof Timestamp
+                    ? incident.completedAt.toDate()
+                    : new Date(incident.completedAt.seconds * 1000);
+
+                  const diffMs = endDate.getTime() - startDate.getTime();
+                  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+                  if (days > 0) {
+                    return `${days}d ${hours}h ${minutes}m`;
+                  } else if (hours > 0) {
+                    return `${hours}h ${minutes}m`;
+                  } else if (minutes > 0) {
+                    return `${minutes}m`;
+                  } else {
+                    return 'Less than 1 minute';
+                  }
+                })()
                 : (() => {
-                    // Calculate time elapsed from report until now
-                    const startDate = incident.timestamp instanceof Timestamp 
-                      ? incident.timestamp.toDate() 
-                      : new Date(incident.timestamp.seconds * 1000);
-                    
-                    const now = new Date();
-                    const diffMs = now.getTime() - startDate.getTime();
-                    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-                    
-                    if (days > 0) {
-                      return `${days}d ${hours}h ${minutes}m`;
-                    } else if (hours > 0) {
-                      return `${hours}h ${minutes}m`;
-                    } else if (minutes > 0) {
-                      return `${minutes}m`;
-                    } else {
-                      return 'Less than 1 minute';
-                    }
-                  })()
+                  // Calculate time elapsed from report until now
+                  const startDate = incident.timestamp instanceof Timestamp
+                    ? incident.timestamp.toDate()
+                    : new Date(incident.timestamp.seconds * 1000);
+
+                  const now = new Date();
+                  const diffMs = now.getTime() - startDate.getTime();
+                  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                  const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+
+                  if (days > 0) {
+                    return `${days}d ${hours}h ${minutes}m`;
+                  } else if (hours > 0) {
+                    return `${hours}h ${minutes}m`;
+                  } else if (minutes > 0) {
+                    return `${minutes}m`;
+                  } else {
+                    return 'Less than 1 minute';
+                  }
+                })()
               }
             </span>
           </div>
-          
+
           {/* Show resolution time if incident is completed */}
           {incident.status === 'Completed' && incident.resolutionTimeFormatted && (
             <div style={{ marginBottom: 18, fontSize: 17 }}>
-              <b>Resolution Time:</b> 
-              <span style={{ 
+              <b>Resolution Time:</b>
+              <span style={{
                 color: '#43a047',
                 fontWeight: 600,
                 marginLeft: 8
@@ -908,11 +854,11 @@ const IncidentDetail: React.FC = () => {
               </span>
             </div>
           )}
-          
+
           {incident.status === 'Completed' && incident.completedAt && (
             <div style={{ marginBottom: 18, fontSize: 17 }}>
-              <b>Date Resolved:</b> 
-              <span style={{ 
+              <b>Date Resolved:</b>
+              <span style={{
                 fontWeight: 500,
                 marginLeft: 8
               }}>
@@ -924,14 +870,14 @@ const IncidentDetail: React.FC = () => {
           <div style={{ marginBottom: 10, fontSize: 17 }}>
             <b>Date Reported:</b> {incident.dateReported}
           </div>
-          
+
           {/* Replace the existing reporter line with our new function */}
           {renderReporterInfo()}
-          
+
           {/* Add Related Reports component */}
           {incident.latitude && incident.longitude && incident.status !== 'Merged' && (
             <div style={{ marginTop: 20, padding: '15px 0', borderTop: '1px solid #eaeaea' }}>
-              <RelatedReports 
+              <RelatedReports
                 incidentId={incident.id}
                 latitude={incident.latitude}
                 longitude={incident.longitude}
@@ -939,72 +885,72 @@ const IncidentDetail: React.FC = () => {
               />
             </div>
           )}
-          
-          {/* Show message when there are no nearby reports */}
-          {incident.latitude && incident.longitude && incident.status === 'Merged' && (
-            <div style={{ 
-              marginTop: 20, 
-              padding: '15px 0', 
-              borderTop: '1px solid #eaeaea',
-              color: '#666',
-              fontStyle: 'italic'
-            }}>
-              <p>This report has already been merged with another report.</p>
-            </div>
-          )}
-          
-          {/* Only show action buttons if NOT merged into another report */}
-          {incident.status !== 'Merged' && (
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32 }}>
-              <button
-                style={{
-                  background: '#2ec4b6',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 24,
-                  padding: '0.9rem 2.5rem',
-                  fontWeight: 600,
-                  fontSize: 18,
-                  cursor: incident?.isAnonymous ? 'not-allowed' : 'pointer',
-                  opacity: incident?.isAnonymous ? 0.6 : 1
-                }}
-                onClick={handleUpdateIncidentProgress}
-                disabled={incident?.isAnonymous}
-                title={incident?.isAnonymous ? 'Cannot update progress for anonymous reporter' : undefined}
-              >
-                Update Incident Progress
-              </button>
-              <button 
-                style={{ 
-                  background: '#43a047', 
-                  color: '#fff', 
-                  border: 'none', 
-                  borderRadius: 24, 
-                  padding: '0.9rem 2.5rem', 
-                  fontWeight: 600, 
-                  fontSize: 18, 
-                  cursor: 'pointer',
-                  marginLeft: 'auto' 
-                }}
-                onClick={handleMarkAsCompleted}
-                disabled={incident.status === 'Completed'}
-              >
-                {incident.status === 'Completed' ? 'Incident Resolved' : 'Mark as Resolved'}
-              </button>
-            </div>
-          )}
+
+          <div style={{ marginTop: 30, display: 'flex', gap: 16 }}>
+            <button
+              onClick={handleUpdateIncidentProgress}
+              style={{
+                flex: 1,
+                background: '#0277bd',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                padding: '14px',
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+            >
+              Update Progress
+            </button>
+            <button
+              onClick={handleMarkAsCompleted}
+              style={{
+                flex: 1,
+                background: '#2e7d32',
+                color: 'white',
+                border: 'none',
+                borderRadius: 8,
+                padding: '14px',
+                fontSize: 16,
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+              }}
+            >
+              Mark as Resolved
+            </button>
+          </div>
         </div>
       </div>
-      <Footer />
-      
+
       {/* Flag Report Modal */}
       <FlagReportModal
         isOpen={showFlagModal}
         onClose={() => setShowFlagModal(false)}
         onConfirm={handleFlagReport}
+        isSubmitting={flagging}
       />
+
+      {/* Severity Change Modal */}
+      <SeverityChangeModal
+        isOpen={showSeverityModal}
+        onClose={() => setShowSeverityModal(false)}
+        onConfirm={() => {
+          if (pendingSeverity) {
+            applySeverityChange(pendingSeverity);
+            setShowSeverityModal(false);
+          }
+        }}
+        currentSeverity={incident.severity}
+        newSeverity={pendingSeverity || 'Low'}
+        incident={incident}
+      />
+
+      <Footer />
     </div>
   );
 };
 
-export default IncidentDetail; 
+export default IncidentDetail;

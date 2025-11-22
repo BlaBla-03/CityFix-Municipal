@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { GoogleMap, useJsApiLoader, Marker } from '@react-google-maps/api';
+import React, { useEffect, useState } from 'react';
+import { useJsApiLoader } from '@react-google-maps/api';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import Footer from '../components/Footer';
+import IncidentHeatMap from '../components/IncidentHeatMap';
 
 interface Report {
   id: string;
@@ -38,11 +39,10 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 const Dashboard: React.FC = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const [municipal, setMunicipal] = useState<string>('');
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<any[]>([]);
 
   const { isLoaded } = useJsApiLoader({
     googleMapsApiKey: GOOGLE_MAPS_API_KEY,
+    libraries: ['visualization'] // Required for Heatmap
   });
 
   useEffect(() => {
@@ -59,16 +59,6 @@ const Dashboard: React.FC = () => {
           const userDoc = querySnapshot.docs[0].data();
           console.log('User data:', userDoc);
           setMunicipal(userDoc.municipal);
-          // Fetch municipal document
-          const mq = query(collection(db, 'municipals'), where('name', '==', userDoc.municipal));
-          const mSnapshot = await getDocs(mq);
-          if (!mSnapshot.empty) {
-            const municipalDoc = mSnapshot.docs[0].data();
-            const postcode = municipalDoc.postcodeRanges?.start?.toString();
-            console.log('Municipal postcode:', postcode);
-          } else {
-            console.log('No municipal document found');
-          }
         } else {
           console.log('No user document found');
         }
@@ -92,8 +82,6 @@ const Dashboard: React.FC = () => {
         id: doc.id,
         ...doc.data()
       })) as Report[];
-      console.log('Fetched reports:', reportsData);
-      console.log('Reports with location data:', reportsData.filter(r => r.latitude && r.longitude));
       setReports(reportsData);
     };
     fetchReports();
@@ -102,63 +90,39 @@ const Dashboard: React.FC = () => {
   // Updated counters with proper logic
   // Total New Issues - only count reports with status "New"
   const total = reports.filter(r => r.reportState === 'New').length;
-  
+
   // In Progress count (only active "In Progress" reports)
   const pending = reports.filter(r => r.reportState === 'In Progress').length;
-  
+
   // Resolved count (both "Completed" and "Resolved" reports)
-  const resolved = reports.filter(r => 
-    r.reportState === 'Completed' || 
+  const resolved = reports.filter(r =>
+    r.reportState === 'Completed' ||
     r.reportState === 'Resolved'
   ).length;
-  
+
   // Overdue count (check deadline against current time)
   const overdue = reports.filter(report => {
     // First check if status is already marked as overdue
     if (report.reportState === 'Overdue') return true;
-    
+
     // Skip completed/resolved reports
     if (report.reportState === 'Completed' || report.reportState === 'Resolved') return false;
-    
+
     // Check if deadline is passed
     if (report.deadline) {
-      const deadlineDate = report.deadline instanceof Date 
-        ? report.deadline 
-        : report.deadline.toDate ? report.deadline.toDate() 
-        : new Date(report.deadline.seconds * 1000);
-      
+      const deadlineDate = report.deadline instanceof Date
+        ? report.deadline
+        : report.deadline.toDate ? report.deadline.toDate()
+          : new Date(report.deadline.seconds * 1000);
+
       return deadlineDate < new Date();
     }
-    
+
     return false;
   }).length;
 
   // Filter out completed reports for map display
   const visibleReports = reports.filter(r => r.reportState !== 'Completed');
-
-  const onLoad = useCallback((map: google.maps.Map) => {
-    mapRef.current = map;
-    if (reports.length > 0) {
-      const bounds = new window.google.maps.LatLngBounds();
-      reports.forEach(r => {
-        if (r.latitude && r.longitude) {
-          bounds.extend({ lat: r.latitude, lng: r.longitude });
-        }
-      });
-      map.fitBounds(bounds);
-    }
-  }, [reports]);
-
-  useEffect(() => {
-    if (!isLoaded || !window.google || !mapRef.current) return;
-
-    // Remove old markers
-    markersRef.current.forEach(marker => marker.setMap(null));
-    markersRef.current = [];
-
-    // We'll use the normal markers instead of AdvancedMarkerElement
-    // Markers will be rendered in the GoogleMap component directly
-  }, [visibleReports, isLoaded]);
 
   // Function to get the center of all visible report pins
   const getReportsCenter = (reports: Report[]) => {
@@ -208,32 +172,12 @@ const Dashboard: React.FC = () => {
             </h2>
             {isLoaded && (
               <div style={{ flex: 1, display: 'flex', borderRadius: '16px', overflow: 'hidden' }}>
-                <GoogleMap
-                  mapContainerStyle={{
-                    width: '100%',
-                    height: '100%', // Fill parent
-                    borderRadius: '16px'
-                  }}
+                <IncidentHeatMap
+                  reports={visibleReports}
                   center={mapCenter}
+                  height="100%"
                   zoom={13}
-                  onLoad={onLoad}
-                  options={{ 
-                    mapTypeControl: false, 
-                    streetViewControl: false,
-                    mapId: "571c55feee232f6"
-                  }}
-                >
-                  {/* Render markers directly instead of using AdvancedMarkerElement */}
-                  {isLoaded && visibleReports.map((report) => 
-                    report.latitude && report.longitude ? (
-                      <Marker
-                        key={report.id}
-                        position={{ lat: report.latitude, lng: report.longitude }}
-                        title={report.incidentType || 'Incident'}
-                      />
-                    ) : null
-                  )}
-                </GoogleMap>
+                />
               </div>
             )}
           </div>

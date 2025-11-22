@@ -11,11 +11,11 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
   const Δφ = ((lat2 - lat1) * Math.PI) / 180;
   const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-  const a = 
+  const a =
     Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
     Math.cos(φ1) * Math.cos(φ2) *
     Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  
+
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c; // Distance in meters
 };
@@ -47,7 +47,7 @@ export const FALLBACK_TIMEFRAMES = {
  */
 export const calculateDeadline = (creationTimestamp: any, severity: string): Date | null => {
   if (!creationTimestamp) return null;
-  
+
   // Convert creationTimestamp to Date
   let creationDate: Date;
   if (creationTimestamp instanceof Timestamp) {
@@ -61,10 +61,16 @@ export const calculateDeadline = (creationTimestamp: any, severity: string): Dat
   } else {
     return null;
   }
-  
-  // Get timeframe based on severity
-  const timeframeHours = FALLBACK_TIMEFRAMES[severity as keyof typeof FALLBACK_TIMEFRAMES] || 24;
-  
+
+  // Normalize severity to capitalized format for case-insensitive lookup
+  // This handles both "medium" and "Medium" from the database
+  const normalizedSeverity = severity ?
+    severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase() :
+    'Low';
+
+  // Get timeframe based on severity (now case-insensitive)
+  const timeframeHours = FALLBACK_TIMEFRAMES[normalizedSeverity as keyof typeof FALLBACK_TIMEFRAMES] || 24;
+
   // Calculate deadline: creation time + timeframe hours
   return new Date(creationDate.getTime() + (timeframeHours * 60 * 60 * 1000));
 };
@@ -80,10 +86,10 @@ export const isOverdue = (deadline: any, status: string): boolean => {
   if (status === 'Completed' || status === 'Merged') {
     return false;
   }
-  
+
   // If no deadline, cannot be overdue
   if (!deadline) return false;
-  
+
   // Convert deadline to Date
   let deadlineDate: Date;
   if (deadline instanceof Timestamp) {
@@ -95,7 +101,7 @@ export const isOverdue = (deadline: any, status: string): boolean => {
   } else {
     return false;
   }
-  
+
   // Check if current time is past deadline
   return new Date() > deadlineDate;
 };
@@ -107,20 +113,20 @@ export const isOverdue = (deadline: any, status: string): boolean => {
  * @param showOverdueTime Whether to show detailed overdue time (for detail view) or just "Overdue"
  * @returns Formatted string representing time remaining or overdue status
  */
-export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime: boolean = false) => {
+export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime: boolean = false, currentTime?: Date) => {
   // For merged reports, return a dash
   if (status === 'Merged') {
     return '-';
   }
-  
+
   // For completed incidents, just return "Completed"
   if (status === 'Completed') {
     return 'Completed';
   }
-  
+
   // If no deadline, return appropriate message
   if (!deadline) return 'No deadline';
-  
+
   // Convert deadline to Date object
   let deadlineDate: Date;
   if (deadline instanceof Timestamp) {
@@ -133,9 +139,9 @@ export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime
     return 'No deadline';
   }
 
-  const now = new Date();
+  const now = currentTime || new Date();
   const diffMs = deadlineDate.getTime() - now.getTime();
-  
+
   // If deadline has passed
   if (diffMs <= 0) {
     // For detail page, show how much time has passed since deadline
@@ -144,7 +150,7 @@ export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime
       const days = Math.floor(overdueMs / (1000 * 60 * 60 * 24));
       const hours = Math.floor((overdueMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((overdueMs % (1000 * 60 * 60)) / (1000 * 60));
-      
+
       let overdueTimeStr = '';
       if (days > 0) {
         overdueTimeStr = hours > 0 ? `${days}d ${hours}h` : `${days}d`;
@@ -153,19 +159,19 @@ export const getTimeRemaining = (deadline: any, status?: string, showOverdueTime
       } else {
         overdueTimeStr = minutes > 0 ? `${minutes}m` : 'Less than 1 minute';
       }
-      
+
       return `Overdue by ${overdueTimeStr}`;
     }
-    
+
     // For list view, just show "Overdue"
     return 'Overdue';
   }
-  
+
   // Calculate remaining time
   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
   const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-  
+
   // Format the time string properly with days first
   if (days > 0) {
     if (hours > 0) {
@@ -199,7 +205,7 @@ export const severityColors: Record<string, string> = {
   'Medium': '#ff9800',
   'High': '#f44336',
   'Critical': '#d32f2f',
-  
+
   // Add lowercase variants
   'low': '#4caf50',
   'medium': '#ff9800',
@@ -210,10 +216,10 @@ export const severityColors: Record<string, string> = {
 // Helper function to get severity color regardless of case
 export const getSeverityColor = (severity: string): string => {
   if (!severity) return '#757575'; // Default gray
-  
+
   // Convert to standard format (first letter uppercase, rest lowercase)
   const standardFormat = severity.charAt(0).toUpperCase() + severity.slice(1).toLowerCase();
-  
+
   // Return color from our map, or default color if not found
   return severityColors[standardFormat] || severityColors[severity] || '#757575';
 };
@@ -227,7 +233,7 @@ export const formatSeverity = (severity: string): string => {
 // Get severity level ranking (for comparison purposes)
 export const getSeverityRanking = (severity: string): number => {
   const normalizedSeverity = severity.toLowerCase();
-  
+
   switch (normalizedSeverity) {
     case 'critical': return 4;
     case 'high': return 3;
@@ -241,8 +247,8 @@ export const getSeverityRanking = (severity: string): number => {
 export const getFlagReasonText = (reason: string): string => {
   return reason === 'duplicate' ? 'Duplicate Report' :
     reason === 'false_info' ? 'False Information' :
-    reason === 'inappropriate' ? 'Inappropriate Content' :
-    reason === 'spam' ? 'Spam' : 'Other';
+      reason === 'inappropriate' ? 'Inappropriate Content' :
+        reason === 'spam' ? 'Spam' : 'Other';
 };
 
 /**
@@ -251,7 +257,7 @@ export const getFlagReasonText = (reason: string): string => {
  */
 export const determineSeverityFromType = async (incidentType: string): Promise<'Low' | 'Medium' | 'High' | 'Critical'> => {
   if (!incidentType) return 'Medium';
-  
+
   try {
     return await getIncidentTypeSeverity(incidentType);
   } catch (error) {
@@ -279,6 +285,7 @@ export interface IncidentDetailData {
   reporterName?: string;
   reporterEmail?: string;
   isAnonymous?: boolean;
+  isGuestUser?: boolean;
   resolutionTimeHours?: number;
   resolutionTimeFormatted?: string;
   completedAt?: any;
@@ -288,4 +295,42 @@ export interface IncidentDetailData {
   flagStatus?: string;
   mergedInto?: string;
   mergedAt?: any;
-} 
+}
+
+/**
+ * Check if two descriptions are similar
+ * @param desc1 First description
+ * @param desc2 Second description
+ * @returns Boolean indicating similarity
+ */
+export const checkDescriptionSimilarity = (desc1: string = '', desc2: string = ''): boolean => {
+  if (!desc1 || !desc2) return false;
+
+  // Convert to lowercase and remove punctuation for better comparison
+  const cleanDesc1 = desc1.toLowerCase().replace(/[^\w\s]/g, '');
+  const cleanDesc2 = desc2.toLowerCase().replace(/[^\w\s]/g, '');
+
+  // Check for direct substring match
+  if (cleanDesc1.includes(cleanDesc2) || cleanDesc2.includes(cleanDesc1)) {
+    return true;
+  }
+
+  // Check for word matches (at least 30% of words should match)
+  const words1 = cleanDesc1.split(/\s+/).filter(w => w.length > 3); // Only consider words longer than 3 chars
+  const words2 = cleanDesc2.split(/\s+/).filter(w => w.length > 3);
+
+  if (words1.length === 0 || words2.length === 0) return false;
+
+  let matchCount = 0;
+  for (const word of words1) {
+    if (words2.includes(word)) {
+      matchCount++;
+    }
+  }
+
+  // Calculate match percentage based on shorter description's word count
+  const minWordCount = Math.min(words1.length, words2.length);
+  const matchPercent = (matchCount / minWordCount) * 100;
+
+  return matchPercent >= 30; // Consider similar if 30% or more words match
+}; 

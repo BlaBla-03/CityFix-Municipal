@@ -13,6 +13,7 @@ import { db, auth } from './config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import SLA from './pages/SLA';
 
+
 function AppRoutes() {
   const [notificationCount, setNotificationCount] = useState<number>(0);
   const [municipal, setMunicipal] = useState<string>('');
@@ -85,6 +86,7 @@ function AppRoutes() {
             <SLA />
           </ProtectedRoute>
         } />
+
       </Routes>
     </>
   );

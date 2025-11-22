@@ -12,7 +12,7 @@ interface MergeModalProps {
 
 export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, currentReport, onClose, onConfirm }) => {
   if (!isOpen || !targetReport) return null;
-  
+
   return (
     <div style={{
       position: 'fixed',
@@ -36,9 +36,9 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
         overflowY: 'auto'
       }}>
         <h3 style={{ marginTop: 0 }}>Merge Duplicate Reports</h3>
-        
+
         <p>You are about to merge the following reports:</p>
-        
+
         <div style={{ padding: 12, background: '#f9f9f9', borderRadius: 8, marginBottom: 16 }}>
           <div style={{ fontWeight: 600 }}>Current: #{currentReport.id}</div>
           <div>{currentReport.description?.substring(0, 100)}{currentReport.description?.length > 100 ? '...' : ''}</div>
@@ -46,7 +46,7 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
             {formatDate(currentReport.dateReported || currentReport.timestamp)}
           </div>
         </div>
-        
+
         <div style={{ padding: 12, background: '#e1f5fe', borderRadius: 8 }}>
           <div style={{ fontWeight: 600 }}>Target: #{targetReport.id}</div>
           <div>{targetReport.description?.substring(0, 100)}{targetReport.description?.length > 100 ? '...' : ''}</div>
@@ -54,7 +54,7 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
             {formatDate(targetReport.timestamp)}
           </div>
         </div>
-        
+
         <div style={{ marginTop: 20 }}>
           <p style={{ color: '#d32f2f' }}><strong>Warning:</strong> This action cannot be undone.</p>
           <p>When merged:</p>
@@ -65,7 +65,7 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
             <li>You will be redirected to the target report</li>
           </ul>
         </div>
-        
+
         <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button
             onClick={onClose}
@@ -104,20 +104,21 @@ export const MergeModal: React.FC<MergeModalProps> = ({ isOpen, targetReport, cu
 interface FlagReportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (reason: string, notes: string) => void;
+  onConfirm: (reason: string, notes: string) => Promise<void>;
+  isSubmitting?: boolean;
 }
 
-export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClose, onConfirm }) => {
+export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClose, onConfirm, isSubmitting }) => {
   const [flagReason, setFlagReason] = useState('duplicate');
   const [flagNotes, setFlagNotes] = useState('');
-  
+
   if (!isOpen) return null;
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onConfirm(flagReason, flagNotes);
   };
-  
+
   return (
     <div style={{
       position: 'fixed',
@@ -139,7 +140,7 @@ export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClos
         maxWidth: 500
       }}>
         <h3 style={{ marginTop: 0 }}>Flag Suspicious Report</h3>
-        
+
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
@@ -163,7 +164,7 @@ export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClos
               <option value="other">Other</option>
             </select>
           </div>
-          
+
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 8, fontWeight: 600 }}>
               Additional Notes:
@@ -183,7 +184,7 @@ export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClos
               placeholder="Please provide details about why this report is being flagged..."
             />
           </div>
-          
+
           <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
             <button
               type="button"
@@ -201,17 +202,18 @@ export const FlagReportModal: React.FC<FlagReportModalProps> = ({ isOpen, onClos
             </button>
             <button
               type="submit"
+              disabled={isSubmitting}
               style={{
                 padding: '8px 16px',
                 border: 'none',
                 borderRadius: 4,
-                background: '#ff9800',
+                background: isSubmitting ? '#ccc' : '#ff9800',
                 color: 'white',
                 fontWeight: 600,
-                cursor: 'pointer'
+                cursor: isSubmitting ? 'not-allowed' : 'pointer'
               }}
             >
-              Flag Report
+              {isSubmitting ? 'Flagging...' : 'Flag Report'}
             </button>
           </div>
         </form>
