@@ -1,5 +1,5 @@
 import React from 'react';
-import { getTimeRemaining, calculateDeadline } from '../utils/incidentUtils';
+import { getTimeRemaining, calculateDeadline, normalizeSeverity } from '../utils/incidentUtils';
 
 interface SeverityChangeModalProps {
     isOpen: boolean;
@@ -52,7 +52,7 @@ export const SeverityChangeModal: React.FC<SeverityChangeModalProps> = ({
             >
                 <h3 style={{ marginTop: 0 }}>Confirm Severity Change</h3>
                 <p>
-                    Are you sure you want to change the severity from <strong>{currentSeverity}</strong> to{' '}
+                    Are you sure you want to change the severity from <strong>{normalizeSeverity(currentSeverity)}</strong> to{' '}
                     <strong>{newSeverity}</strong>?
                 </p>
                 <p>Current time remaining: {currentTimeRemaining}</p>

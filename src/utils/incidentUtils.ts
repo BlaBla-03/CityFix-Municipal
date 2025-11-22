@@ -31,6 +31,17 @@ export const formatDate = (date: any) => {
   return '';
 };
 
+// Normalize severity to ensure consistent capitalization
+export const normalizeSeverity = (severity: string): 'Low' | 'Medium' | 'High' | 'Critical' => {
+  if (!severity) return "Low";
+  const s = severity.trim().toLowerCase();
+  if (s === "low") return "Low";
+  if (s === "medium") return "Medium";
+  if (s === "high") return "High";
+  if (s === "critical") return "Critical";
+  return "Low";
+};
+
 // Define severity timeframes in hours
 export const FALLBACK_TIMEFRAMES = {
   'Low': 168, // 7 days
