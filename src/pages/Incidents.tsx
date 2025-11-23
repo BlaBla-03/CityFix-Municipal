@@ -5,10 +5,10 @@ import { db, auth } from '../config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Timestamp } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import { 
-  formatDate, 
-  getTimeRemaining, 
-  statusColors, 
+import {
+  formatDate,
+  getTimeRemaining,
+  statusColors,
   calculateDeadline,
   isOverdue,
   determineSeverityFromType,
@@ -69,17 +69,17 @@ const Incidents: React.FC = () => {
       setLoading(true);
       const q = query(collection(db, 'reports'), where('municipal', '==', municipal));
       const querySnapshot = await getDocs(q);
-      
+
       // Process all incidents with Promise.all to handle asynchronous severity determination
       const incidentPromises = querySnapshot.docs.map(async (docSnapshot) => {
         const d = docSnapshot.data();
-        
+
         // Determine severity based on incident type if not set
         let severity = d.severity;
-        if ((!severity || severity === 'Low') && d.incidentType) {
+        if (!severity && d.incidentType) {
           try {
             severity = await determineSeverityFromType(d.incidentType);
-            
+
             // If severity changed, update the document
             if (severity !== d.severity) {
               console.log(`Updating severity for ${docSnapshot.id} from ${d.severity || 'unset'} to ${severity} based on type ${d.incidentType}`);
@@ -93,24 +93,24 @@ const Incidents: React.FC = () => {
         } else {
           severity = d.severity || 'Low';
         }
-        
+
         // Get the current status
         let status = d.reportState || 'New';
-        
+
         // Calculate deadline based on severity and report time
         const deadline = calculateDeadline(d.timestamp, severity);
-        
+
         // Check if the incident is overdue
         const shouldBeOverdue = isOverdue(deadline, status);
-        
+
         // If overdue, update status
         if (shouldBeOverdue && status !== 'Completed' && status !== 'Merged') {
           status = 'Overdue';
-          
+
           // Update status in Firestore
           try {
             const docRef = firestoreDoc(db, 'reports', docSnapshot.id);
-            await updateDoc(docRef, { 
+            await updateDoc(docRef, {
               reportState: status,
               deadline: deadline ? Timestamp.fromDate(deadline) : null
             });
@@ -119,7 +119,7 @@ const Incidents: React.FC = () => {
             console.error(`Failed to update status for incident ${docSnapshot.id}:`, e);
           }
         }
-        
+
         return {
           id: docSnapshot.id,
           incidentType: d.incidentType || '',
@@ -131,13 +131,13 @@ const Incidents: React.FC = () => {
           mergedInto: d.mergedInto || '' // Store the ID of the parent report (if merged)
         } as Incident;
       });
-      
+
       // Wait for all promises to resolve
       const data = await Promise.all(incidentPromises);
-      
+
       setIncidents(data);
       setLoading(false);
-      
+
       // Reset to first page when data changes
       setCurrentPage(1);
     };
@@ -153,7 +153,7 @@ const Incidents: React.FC = () => {
   const filteredIncidents = incidents.filter(inc => {
     // Split incident types by common separators and trim whitespace
     const incidentTypes = inc.incidentType.split(/[,;\/]/).map(type => type.trim());
-    
+
     return (
       (!search || inc.incidentType.toLowerCase().includes(search.toLowerCase()) || inc.id.includes(search)) &&
       (!statusFilter || inc.status === statusFilter) &&
@@ -164,7 +164,7 @@ const Incidents: React.FC = () => {
   // Create a map to group merged reports with their parents
   const getMergedGroupsMap = () => {
     const mergedMap = new Map<string, Incident[]>();
-    
+
     // Find all merged reports and group them by parent ID
     filteredIncidents.forEach(inc => {
       if (inc.status === 'Merged' && inc.mergedInto) {
@@ -174,27 +174,27 @@ const Incidents: React.FC = () => {
         mergedMap.get(inc.mergedInto)?.push(inc);
       }
     });
-    
+
     return mergedMap;
   };
 
   // Sort incidents with merged reports grouped under their parents
   const getSortedIncidents = () => {
     const mergedGroupsMap = getMergedGroupsMap();
-    
+
     // First, get all non-merged reports
     const mainReports = filteredIncidents.filter(inc => inc.status !== 'Merged');
-    
+
     // Sort main reports first
     mainReports.sort((a, b) => {
       // First prioritize New status at the top
       if (a.status === 'New' && b.status !== 'New') return -1;
       if (a.status !== 'New' && b.status === 'New') return 1;
-      
+
       // First sort by status - completed goes to the bottom
       if (a.status === 'Completed' && b.status !== 'Completed') return 1;
       if (a.status !== 'Completed' && b.status === 'Completed') return -1;
-      
+
       // Then apply date sort if specified
       if (dateSort !== '') {
         // Convert timestamps to comparable values
@@ -204,26 +204,26 @@ const Incidents: React.FC = () => {
           if (timestamp instanceof Date) return timestamp.getTime();
           return 0;
         };
-        
+
         const timeA = getTime(a.timestamp);
         const timeB = getTime(b.timestamp);
-        
+
         return dateSort === 'newest' ? timeB - timeA : timeA - timeB;
       }
-      
+
       // Then prioritize overdue items
       if (a.status === 'Overdue' && b.status !== 'Overdue') return -1;
       if (a.status !== 'Overdue' && b.status === 'Overdue') return 1;
-      
+
       return 0;
     });
-    
+
     // Create the final sorted list with merged reports below their parents
     const result: Incident[] = [];
-    
+
     mainReports.forEach(report => {
       result.push(report);
-      
+
       // If this report has merged reports, add them right after
       if (mergedGroupsMap.has(report.id)) {
         const mergedReports = mergedGroupsMap.get(report.id) || [];
@@ -235,26 +235,26 @@ const Incidents: React.FC = () => {
             if (timestamp instanceof Date) return timestamp.getTime();
             return 0;
           };
-          
+
           const timeA = getTime(a.timestamp);
           const timeB = getTime(b.timestamp);
-          
+
           return timeB - timeA; // Newest first
         });
-        
+
         result.push(...mergedReports);
       }
     });
-    
+
     return result;
   };
 
   const sortedIncidents = getSortedIncidents();
-  
+
   // Pagination
   const totalPages = Math.ceil(sortedIncidents.length / REPORTS_PER_PAGE);
   const paginatedIncidents = sortedIncidents.slice(
-    (currentPage - 1) * REPORTS_PER_PAGE, 
+    (currentPage - 1) * REPORTS_PER_PAGE,
     currentPage * REPORTS_PER_PAGE
   );
 
@@ -296,9 +296,9 @@ const Incidents: React.FC = () => {
               <option key={cat.id} value={cat.name}>{cat.name}</option>
             ))}
           </select>
-          <select 
-            value={dateSort} 
-            onChange={e => setDateSort(e.target.value as SortOption)} 
+          <select
+            value={dateSort}
+            onChange={e => setDateSort(e.target.value as SortOption)}
             style={{ flex: 1, padding: '0.7rem 1rem', borderRadius: 8, border: '1px solid #ddd', fontSize: 16 }}
           >
             <option value="">Sort by Date</option>
@@ -324,12 +324,12 @@ const Incidents: React.FC = () => {
               </thead>
               <tbody>
                 {paginatedIncidents.map(inc => (
-                  <tr key={inc.id} style={{ 
-                    borderTop: '1px solid #f0f0f0', 
+                  <tr key={inc.id} style={{
+                    borderTop: '1px solid #f0f0f0',
                     fontSize: 15,
                     background: inc.status === 'Merged' ? '#f9f9f9' : 'transparent', // Lighter background for merged reports
                   }}>
-                    <td style={{ 
+                    <td style={{
                       padding: '1rem 0.5rem',
                       paddingLeft: inc.status === 'Merged' ? '2rem' : '0.5rem' // Indent merged reports
                     }}>
@@ -341,10 +341,10 @@ const Incidents: React.FC = () => {
                     <td style={{ color: getSeverityColor(inc.severity), fontWeight: 600 }}>
                       {formatSeverity(inc.severity)}
                     </td>
-                    <td style={{ 
-                      color: inc.status === 'Overdue' ? '#e53935' : 
-                            inc.status === 'Completed' ? '#43a047' : '#2ec4b6',
-                      fontWeight: 600 
+                    <td style={{
+                      color: inc.status === 'Overdue' ? '#e53935' :
+                        inc.status === 'Completed' ? '#43a047' : '#2ec4b6',
+                      fontWeight: 600
                     }}>
                       {getTimeRemaining(inc.deadline, inc.status)}
                     </td>
@@ -364,17 +364,17 @@ const Incidents: React.FC = () => {
                 )}
               </tbody>
             </table>
-            
+
             {/* Pagination controls */}
             {totalPages > 1 && (
               <div style={{ display: 'flex', justifyContent: 'center', margin: '24px 0' }}>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <button 
+                  <button
                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
-                    style={{ 
-                      padding: '8px 16px', 
-                      borderRadius: '8px', 
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
                       border: '1px solid #ddd',
                       background: '#fff',
                       cursor: currentPage === 1 ? 'default' : 'pointer',
@@ -383,17 +383,17 @@ const Incidents: React.FC = () => {
                   >
                     Previous
                   </button>
-                  
+
                   <div style={{ margin: '0 16px' }}>
                     Page {currentPage} of {totalPages}
                   </div>
-                  
-                  <button 
+
+                  <button
                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                     disabled={currentPage === totalPages}
-                    style={{ 
-                      padding: '8px 16px', 
-                      borderRadius: '8px', 
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '8px',
                       border: '1px solid #ddd',
                       background: '#fff',
                       cursor: currentPage === totalPages ? 'default' : 'pointer',

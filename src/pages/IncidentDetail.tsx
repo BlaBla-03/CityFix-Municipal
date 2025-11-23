@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { doc, getDoc, updateDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, Timestamp, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import Footer from '../components/Footer';
 import {
@@ -23,16 +23,16 @@ import {
   updateReporterTrustOnVerification,
   updateReporterTrustOnFalseReport
 } from '../utils/reporterUtils';
-import { collection, query, where, getDocs } from 'firebase/firestore';
 
-// Extend the IncidentDetailData interface locally to add isOverdue
-interface ExtendedIncidentDetailData extends IncidentDetailData {
+// Extend the IncidentDetailData interface locally to add isOverdue and stricter severity
+interface ExtendedIncidentDetailData extends Omit<IncidentDetailData, 'severity'> {
   isOverdue: boolean;
   timestamp?: any;
+  severity: 'Low' | 'Medium' | 'High' | 'Critical';
 }
 
-// Add this helper function near the top of the component
-const normalizeSeverity = (severity: string) => {
+// Helper function to normalize severity
+const normalizeSeverity = (severity: string | undefined | null): 'Low' | 'Medium' | 'High' | 'Critical' => {
   if (!severity) return "Low";
   const s = severity.trim().toLowerCase();
   if (s === "low") return "Low";
@@ -48,17 +48,25 @@ const IncidentDetail: React.FC = () => {
   const [incident, setIncident] = useState<ExtendedIncidentDetailData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [showFlagModal, setShowFlagModal] = useState(false);
-  const [flagging, setFlagging] = useState(false);
-  const [reporterData] = useState<any>(null);
-  const [incidentPriority, setIncidentPriority] = useState<number | null>(null);
-  const [mergedReports, setMergedReports] = useState<any[]>([]);
-  const [isMainReport, setIsMainReport] = useState(false);
+
+  // Reporter state
   const [reporterId, setReporterId] = useState<string | null>(null);
   const [reporterTrustLevel, setReporterTrustLevel] = useState<number | null>(null);
+
+  // Priority state
+  const [incidentPriority, setIncidentPriority] = useState<number | null>(null);
+
+  // Merged reports state
+  const [mergedReports, setMergedReports] = useState<any[]>([]);
+  const [isMainReport, setIsMainReport] = useState(false);
+
+  // Modals state
+  const [showFlagModal, setShowFlagModal] = useState(false);
+  const [flagging, setFlagging] = useState(false);
   const [showSeverityModal, setShowSeverityModal] = useState(false);
   const [pendingSeverity, setPendingSeverity] = useState<'Low' | 'Medium' | 'High' | 'Critical' | null>(null);
 
+  // Main effect to fetch incident data
   useEffect(() => {
     const fetchIncident = async () => {
       if (!id) return;
@@ -70,7 +78,6 @@ const IncidentDetail: React.FC = () => {
         if (docSnap.exists()) {
           const d = docSnap.data();
 
-          // Log the incident data for debugging
           console.log('Initial incident data:', {
             id: docSnap.id,
             timestamp: d.timestamp,
@@ -80,37 +87,46 @@ const IncidentDetail: React.FC = () => {
             isOverdue: d.isOverdue
           });
 
-          // Set severity based on incident type if it's not already set
-          // Or if we're forcing severity based on type (uncomment the next line to enforce type-based severity)
-          // const shouldUpdateSeverity = true;
-          const shouldUpdateSeverity = !d.severity || d.severity === 'Low'; // Only update if not set or default Low
+          // Normalize severity from DB
+          // CRITICAL FIX: Trust the DB severity if it exists. Only default to 'Low' if missing.
+          const currentSeverity = d.severity ? normalizeSeverity(d.severity) : null;
 
-          let severity = d.severity || 'Low';
+          // Only attempt to auto-calculate if severity is completely missing
+          const shouldUpdateSeverity = !d.severity;
+
+          console.log('Debug Severity:', {
+            rawSeverity: d.severity,
+            currentSeverity,
+            shouldUpdateSeverity,
+            incidentType: d.incidentType
+          });
+
+          let severity: 'Low' | 'Medium' | 'High' | 'Critical' = currentSeverity || 'Low';
+
           if (shouldUpdateSeverity && d.incidentType) {
             try {
-              // Get severity based on incident type
               const typeSeverity = await determineSeverityFromType(d.incidentType);
-              console.log('determineSeverityFromType returned:', typeSeverity);
-              if (typeSeverity !== severity) {
-                severity = typeSeverity;
+              // determineSeverityFromType returns a string, so we normalize it
+              const normalizedTypeSeverity = normalizeSeverity(typeSeverity);
+
+              if (normalizedTypeSeverity && normalizedTypeSeverity !== severity) {
+                severity = normalizedTypeSeverity;
                 console.log(`Setting severity to ${severity} based on incident type: ${d.incidentType}`);
               }
             } catch (error) {
               console.error('Error determining severity from type:', error);
             }
           }
-          console.log('Final severity to set in state:', severity);
 
-          // Always recalculate deadline using current timeframe values and potentially updated severity
           const deadline = calculateDeadline(d.timestamp, severity);
           let needsUpdate = false;
+          const updates: any = {};
 
-          // Determine if deadline or severity needs update
-          if (severity !== d.severity) {
+          if (d.severity !== severity) {
             needsUpdate = true;
+            updates.severity = severity;
           }
 
-          // Determine if deadline needs update
           if (deadline && d.deadline) {
             let existingDeadlineDate: Date | null = null;
             if (d.deadline instanceof Timestamp) {
@@ -131,61 +147,47 @@ const IncidentDetail: React.FC = () => {
             needsUpdate = true;
           }
 
-          // Check if incident should be marked as overdue
           let status = d.reportState || 'New';
 
           // Calculate the actual overdue state
           const shouldBeOverdue = isOverdue(deadline, status);
 
-          // Apply overdue status logic with new rules:
-          // 1. Never mark completed/merged incidents as overdue
-          // 2. Respect any manual override of isOverdue from the database
           let isOverdueFlag = false;
           if (status !== 'Completed' && status !== 'Merged') {
             isOverdueFlag = shouldBeOverdue;
 
-            // If overdue state changed, update the database
             if (d.isOverdue !== shouldBeOverdue) {
               needsUpdate = true;
+              updates.isOverdue = shouldBeOverdue;
             }
 
-            // If overdue, also update the status
             if (shouldBeOverdue && status !== 'Overdue') {
               status = 'Overdue';
               needsUpdate = true;
+              updates.reportState = 'Overdue';
             } else if (!shouldBeOverdue && status === 'Overdue') {
               status = 'In Progress';
               needsUpdate = true;
+              updates.reportState = 'In Progress';
             }
           }
 
-          // Update document if needed
           if (needsUpdate) {
-            const updates: any = {
-              isOverdue: isOverdueFlag,
-              reportState: status
-            };
-
-            // Update severity only if it changed
-            if (severity !== d.severity) {
-              updates.severity = severity;
-            }
-
-            // Update deadline only if it changed
             if (deadline) {
               updates.deadline = Timestamp.fromDate(deadline);
+            }
+            // Ensure we don't overwrite if we didn't mean to
+            if (!updates.reportState && status !== d.reportState) {
+              updates.reportState = status;
+            }
+            if (updates.isOverdue === undefined) {
+              updates.isOverdue = isOverdueFlag;
             }
 
             await updateDoc(docRef, updates);
             console.log('Updated incident with:', updates);
           }
 
-          // Fetch reporter data if available
-          if (d.reporterEmail) {
-            // ... existing code for fetching reporter ...
-          }
-
-          // Always update local state with the correct severity
           const incidentData: ExtendedIncidentDetailData = {
             id: docSnap.id,
             location: d.location || '',
@@ -197,7 +199,7 @@ const IncidentDetail: React.FC = () => {
             photos: d.photos || [],
             mediaUrls: d.mediaUrls || [],
             contact: d.contact || '',
-            severity: severity, // Use potentially updated severity
+            severity: severity, // This is now strictly typed
             deadline: deadline || d.timestamp,
             status: status,
             dateReported: formatDate(d.timestamp),
@@ -217,12 +219,10 @@ const IncidentDetail: React.FC = () => {
           };
           setIncident(incidentData);
 
-          // Check if this is a main report with merged sub-reports
           const mergedRpts = d.mergedReports || [];
           setMergedReports(mergedRpts);
           setIsMainReport(mergedRpts.length > 0);
 
-          // Update status to "In Progress" if it's "New"
           if (incidentData.status === 'New') {
             await updateDoc(docRef, {
               reportState: 'In Progress',
@@ -235,24 +235,19 @@ const IncidentDetail: React.FC = () => {
         }
       } catch (e) {
         setError('Failed to load incident.');
+        console.error(e);
       }
       setLoading(false);
     };
     fetchIncident();
   }, [id]);
 
-  // Additional effect to calculate priority based on reporter trust level
-  useEffect(() => {
-    if (incident?.severity && reporterData?.trustLevel) {
-      const priority = calculateIncidentPriority(reporterData.trustLevel, incident.severity);
-      setIncidentPriority(priority);
-    }
-  }, [incident?.severity, reporterData?.trustLevel]);
-
+  // Effect to fetch reporter ID
   useEffect(() => {
     const fetchReporterId = async () => {
-      if (incident?.reporterEmail && !incident.isAnonymous) {
-        // Query Firestore for reporter by email
+      if (!incident?.reporterEmail || incident.isAnonymous) return;
+
+      try {
         const reportersRef = collection(db, 'reporter');
         const q = query(reportersRef, where('email', '==', incident.reporterEmail));
         const querySnapshot = await getDocs(q);
@@ -261,10 +256,20 @@ const IncidentDetail: React.FC = () => {
           setReporterId(doc.id);
           setReporterTrustLevel(doc.data().trustLevel || 0);
         }
+      } catch (err) {
+        console.error("Error fetching reporter:", err);
       }
     };
     fetchReporterId();
   }, [incident?.reporterEmail, incident?.isAnonymous]);
+
+  // Effect to calculate priority
+  useEffect(() => {
+    if (incident?.severity && reporterTrustLevel !== null) {
+      const priority = calculateIncidentPriority(reporterTrustLevel, incident.severity);
+      setIncidentPriority(priority);
+    }
+  }, [incident?.severity, reporterTrustLevel]);
 
   const applySeverityChange = async (newSeverity: 'Low' | 'Medium' | 'High' | 'Critical') => {
     if (!incident || !id) return;
