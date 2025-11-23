@@ -180,8 +180,31 @@ const RelatedReports: React.FC<RelatedReportProps> = ({ incidentId, latitude, lo
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>
-        Similar Reports Nearby ({relatedReports.length})
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 17 }}>
+          Similar Reports Nearby ({relatedReports.length})
+        </div>
+        {relatedReports.length >= 2 && (
+          <button
+            onClick={() => navigate('/smart-merge')}
+            style={{
+              background: '#673ab7',
+              color: 'white',
+              border: 'none',
+              borderRadius: 20,
+              padding: '6px 16px',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              boxShadow: '0 2px 4px rgba(103, 58, 183, 0.3)'
+            }}
+          >
+            <span>✨</span> Smart Merge System
+          </button>
+        )}
       </div>
 
       {reportsToShow.map(report => (

@@ -16,7 +16,6 @@ import {
 } from '../utils/incidentUtils';
 import { FlagReportModal } from '../components/IncidentModals';
 import { SeverityChangeModal } from '../components/SeverityChangeModal';
-import SmartMergeAlert from '../components/SmartMergeAlert';
 import RelatedReports from '../components/RelatedReports';
 import ReporterBadge from '../components/ReporterBadge';
 import {
@@ -586,30 +585,6 @@ const IncidentDetail: React.FC = () => {
             </div>
           )}
 
-          {/* Smart Merge Alert */}
-          {incident.status !== 'Merged' && incident.status !== 'Completed' && incident.latitude && incident.longitude && (
-            <SmartMergeAlert
-              currentIncidentId={incident.id}
-              currentLatitude={incident.latitude}
-              currentLongitude={incident.longitude}
-              incidentType={incident.incidentType}
-              currentDescription={incident.description}
-              onMergeComplete={() => {
-                // Refresh the incident data
-                const fetchIncident = async () => {
-                  const docRef = doc(db, 'reports', id!);
-                  const docSnap = await getDoc(docRef);
-                  if (docSnap.exists()) {
-                    const d = docSnap.data();
-                    setIncident(prev => prev ? { ...prev, ...d } : null);
-                    setMergedReports(d.mergedReports || []);
-                  }
-                };
-                fetchIncident();
-              }}
-            />
-          )}
-
           {/* Display merged info at the top if this is a merged report */}
           {incident.status === 'Merged' && incident.mergedInto && (
             <div style={{
@@ -875,7 +850,7 @@ const IncidentDetail: React.FC = () => {
           {renderReporterInfo()}
 
           {/* Add Related Reports component */}
-          {incident.latitude && incident.longitude && incident.status !== 'Merged' && (
+          {incident.latitude && incident.longitude && incident.status !== 'Merged' && incident.status !== 'Completed' && (
             <div style={{ marginTop: 20, padding: '15px 0', borderTop: '1px solid #eaeaea' }}>
               <RelatedReports
                 incidentId={incident.id}
@@ -889,37 +864,39 @@ const IncidentDetail: React.FC = () => {
           <div style={{ marginTop: 30, display: 'flex', gap: 16 }}>
             <button
               onClick={handleUpdateIncidentProgress}
+              disabled={incident.status === 'Completed'}
               style={{
                 flex: 1,
-                background: '#0277bd',
+                background: incident.status === 'Completed' ? '#ccc' : '#0277bd',
                 color: 'white',
                 border: 'none',
                 borderRadius: 8,
                 padding: '14px',
                 fontSize: 16,
                 fontWeight: 600,
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                cursor: incident.status === 'Completed' ? 'not-allowed' : 'pointer',
+                boxShadow: incident.status === 'Completed' ? 'none' : '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
               Update Progress
             </button>
             <button
               onClick={handleMarkAsCompleted}
+              disabled={incident.status === 'Completed'}
               style={{
                 flex: 1,
-                background: '#2e7d32',
+                background: incident.status === 'Completed' ? '#ccc' : '#2e7d32',
                 color: 'white',
                 border: 'none',
                 borderRadius: 8,
                 padding: '14px',
                 fontSize: 16,
                 fontWeight: 600,
-                cursor: 'pointer',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                cursor: incident.status === 'Completed' ? 'not-allowed' : 'pointer',
+                boxShadow: incident.status === 'Completed' ? 'none' : '0 2px 4px rgba(0,0,0,0.1)'
               }}
             >
-              Mark as Resolved
+              {incident.status === 'Completed' ? 'Resolved' : 'Mark as Resolved'}
             </button>
           </div>
         </div>

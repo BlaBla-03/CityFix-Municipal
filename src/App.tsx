@@ -12,6 +12,7 @@ import { collection, query, where, onSnapshot, getDocs } from 'firebase/firestor
 import { db, auth } from './config/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import SLA from './pages/SLA';
+import SmartMergeDashboard from './pages/SmartMergeDashboard';
 
 
 function AppRoutes() {
@@ -84,6 +85,11 @@ function AppRoutes() {
         <Route path="/sla" element={
           <ProtectedRoute>
             <SLA />
+          </ProtectedRoute>
+        } />
+        <Route path="/smart-merge" element={
+          <ProtectedRoute>
+            <SmartMergeDashboard />
           </ProtectedRoute>
         } />
 
